@@ -37,6 +37,7 @@ depends: []
 #include "database.hpp"
 #include "gpio.hpp"
 #include "message.hpp"
+#include "mutex.hpp"
 #include "spi.hpp"
 
 #ifndef LIBXR_NO_EIGEN
@@ -51,8 +52,11 @@ depends: []
  * @details The module talks to LSM6DSV16X over SPI mode 0 with a GPIO-managed
  * chip select, configures ODR/ranges, polls sensor data, and publishes gyro
  * data in rad/s plus accelerometer data in g.
+ * On systems without real thread support, sampling is driven from OnMonitor()
+ * instead of an auto-created worker thread.
  * @details_cn 模块使用 SPI mode 0 和 GPIO 手动片选访问 LSM6DSV16X，完成
  * ODR/量程配置，轮询读取数据，并发布 rad/s 单位陀螺仪数据与 g 单位加速度数据。
+ * 在无线程支持的系统中，采样由 OnMonitor() 驱动，而不是自动创建后台线程。
  */
 class LSM6DSV16X : public LibXR::Application
 {
@@ -263,8 +267,12 @@ class LSM6DSV16X : public LibXR::Application
 
     XR_LOG_PASS("LSM6DSV16X: Init succeeded.");
 
+#if !defined(LIBXR_NOT_SUPPORT_MUTI_THREAD) || !(LIBXR_NOT_SUPPORT_MUTI_THREAD)
     thread_.Create(this, ThreadFunc, "lsm6dsv16x_thread", task_stack_depth,
                    LibXR::Thread::Priority::REALTIME);
+#else
+    UNUSED(task_stack_depth);
+#endif
   }
 
   /**
@@ -273,6 +281,15 @@ class LSM6DSV16X : public LibXR::Application
    */
   void OnMonitor() override
   {
+#if defined(LIBXR_NOT_SUPPORT_MUTI_THREAD) && (LIBXR_NOT_SUPPORT_MUTI_THREAD)
+    const auto now = LibXR::Timebase::GetMilliseconds();
+    if (uint32_t(now) - uint32_t(last_poll_ms_) >= PollIntervalMs())
+    {
+      last_poll_ms_ = now;
+      PollOnce();
+    }
+#endif
+
     if (!std::isfinite(gyro_data_.x()) || !std::isfinite(gyro_data_.y()) ||
         !std::isfinite(gyro_data_.z()) || !std::isfinite(accl_data_.x()) ||
         !std::isfinite(accl_data_.y()) || !std::isfinite(accl_data_.z()))
@@ -293,23 +310,39 @@ class LSM6DSV16X : public LibXR::Application
   {
     LibXR::Thread::Sleep(10);
 
-    if (ReadSingle(REG_WHO_AM_I) != WHO_AM_I_VALUE)
+    uint8_t value = 0;
+    if (ReadSingle(REG_WHO_AM_I, value) != LibXR::ErrorCode::OK ||
+        value != WHO_AM_I_VALUE)
     {
       XR_LOG_WARN("LSM6DSV16X: bad WHO_AM_I");
       return false;
     }
 
-    WriteSingle(REG_CTRL3, CTRL3_SW_RESET);
+    if (WriteSingle(REG_CTRL3, CTRL3_SW_RESET) != LibXR::ErrorCode::OK)
+    {
+      XR_LOG_WARN("LSM6DSV16X: reset write failed");
+      return false;
+    }
+
+    bool reset_done = false;
     for (uint8_t retry = 0; retry < 20; retry++)
     {
-      if ((ReadSingle(REG_CTRL3) & CTRL3_SW_RESET) == 0)
+      if (ReadSingle(REG_CTRL3, value) == LibXR::ErrorCode::OK &&
+          (value & CTRL3_SW_RESET) == 0)
       {
+        reset_done = true;
         break;
       }
       LibXR::Thread::Sleep(1);
     }
+    if (!reset_done)
+    {
+      XR_LOG_WARN("LSM6DSV16X: reset timeout");
+      return false;
+    }
 
-    if (ReadSingle(REG_WHO_AM_I) != WHO_AM_I_VALUE)
+    if (ReadSingle(REG_WHO_AM_I, value) != LibXR::ErrorCode::OK ||
+        value != WHO_AM_I_VALUE)
     {
       XR_LOG_WARN("LSM6DSV16X: WHO_AM_I lost after reset");
       return false;
@@ -336,35 +369,47 @@ class LSM6DSV16X : public LibXR::Application
     const uint8_t ctrl1 = static_cast<uint8_t>(accel_datarate_) & 0x0F;
     const uint8_t ctrl2 = static_cast<uint8_t>(gyro_datarate_) & 0x0F;
 
-    WriteSingle(REG_CTRL3, ctrl3);
-    WriteSingle(REG_CTRL6, ctrl6);
-    WriteSingle(REG_CTRL8, ctrl8);
-    WriteSingle(REG_CTRL1, ctrl1);
-    WriteSingle(REG_CTRL2, ctrl2);
+    if (WriteSingle(REG_CTRL3, ctrl3) != LibXR::ErrorCode::OK ||
+        WriteSingle(REG_CTRL6, ctrl6) != LibXR::ErrorCode::OK ||
+        WriteSingle(REG_CTRL8, ctrl8) != LibXR::ErrorCode::OK ||
+        WriteSingle(REG_CTRL1, ctrl1) != LibXR::ErrorCode::OK ||
+        WriteSingle(REG_CTRL2, ctrl2) != LibXR::ErrorCode::OK)
+    {
+      XR_LOG_WARN("LSM6DSV16X: register configuration write failed");
+      return false;
+    }
 
-    if ((ReadSingle(REG_CTRL3) & ctrl3) != ctrl3)
+    auto verify = [this](uint8_t reg, uint8_t mask, uint8_t expected,
+                         const char* name) -> bool
     {
-      XR_LOG_WARN("LSM6DSV16X: CTRL3 verify failed");
+      uint8_t value = 0;
+      if (ReadSingle(reg, value) != LibXR::ErrorCode::OK ||
+          (value & mask) != expected)
+      {
+        XR_LOG_WARN("LSM6DSV16X: %s verify failed", name);
+        return false;
+      }
+      return true;
+    };
+
+    if (!verify(REG_CTRL3, ctrl3, ctrl3, "CTRL3"))
+    {
       return false;
     }
-    if ((ReadSingle(REG_CTRL6) & 0x0F) != ctrl6)
+    if (!verify(REG_CTRL6, 0x0F, ctrl6, "CTRL6"))
     {
-      XR_LOG_WARN("LSM6DSV16X: CTRL6 verify failed");
       return false;
     }
-    if ((ReadSingle(REG_CTRL8) & 0x03) != ctrl8)
+    if (!verify(REG_CTRL8, 0x03, ctrl8, "CTRL8"))
     {
-      XR_LOG_WARN("LSM6DSV16X: CTRL8 verify failed");
       return false;
     }
-    if ((ReadSingle(REG_CTRL1) & 0x0F) != ctrl1)
+    if (!verify(REG_CTRL1, 0x0F, ctrl1, "CTRL1"))
     {
-      XR_LOG_WARN("LSM6DSV16X: CTRL1 verify failed");
       return false;
     }
-    if ((ReadSingle(REG_CTRL2) & 0x0F) != ctrl2)
+    if (!verify(REG_CTRL2, 0x0F, ctrl2, "CTRL2"))
     {
-      XR_LOG_WARN("LSM6DSV16X: CTRL2 verify failed");
       return false;
     }
 
@@ -379,12 +424,32 @@ class LSM6DSV16X : public LibXR::Application
   {
     while (true)
     {
-      self->ReadBurst(REG_OUT_TEMP_L, self->buffer_.data(), BURST_SIZE);
-      self->Parse();
-      const auto sample_ts = self->last_sample_ts_;
-      self->topic_accl_.Publish(self->accl_data_, sample_ts);
-      self->topic_gyro_.Publish(self->gyro_data_, sample_ts);
+      self->PollOnce();
       LibXR::Thread::Sleep(self->PollIntervalMs());
+    }
+  }
+
+  /**
+   * @brief Read, parse, and publish one sensor sample.
+   * @brief_cn 读取、解析并发布一帧传感器采样。
+   */
+  void PollOnce()
+  {
+    if (ReadBurst(REG_OUT_TEMP_L, buffer_.data(), BURST_SIZE) == LibXR::ErrorCode::OK)
+    {
+      consecutive_read_errors_ = 0;
+      Parse();
+      const auto sample_ts = last_sample_ts_;
+      topic_accl_.Publish(accl_data_, sample_ts);
+      topic_gyro_.Publish(gyro_data_, sample_ts);
+      return;
+    }
+
+    consecutive_read_errors_++;
+    if (consecutive_read_errors_ == 1 || consecutive_read_errors_ % 100 == 0)
+    {
+      XR_LOG_WARN("LSM6DSV16X: sample read failed %u times",
+                  consecutive_read_errors_);
     }
   }
 
@@ -399,38 +464,63 @@ class LSM6DSV16X : public LibXR::Application
   }
 
   /**
+   * @brief Wait for a period while keeping sampling alive on single-thread builds.
+   * @brief_cn 等待指定时间；在无线程构建中同步驱动采样。
+   */
+  void WaitWithSampling(uint32_t milliseconds)
+  {
+#if defined(LIBXR_NOT_SUPPORT_MUTI_THREAD) && (LIBXR_NOT_SUPPORT_MUTI_THREAD)
+    uint32_t elapsed = 0;
+    const auto interval = PollIntervalMs();
+    while (elapsed < milliseconds)
+    {
+      PollOnce();
+      const auto step = std::min(interval, milliseconds - elapsed);
+      LibXR::Thread::Sleep(step);
+      elapsed += step;
+    }
+#else
+    LibXR::Thread::Sleep(milliseconds);
+#endif
+  }
+
+  /**
    * @brief Read one LSM6DSV16X register through SPI MemRead.
    * @brief_cn 通过 SPI MemRead 读取单个 LSM6DSV16X 寄存器。
    */
-  uint8_t ReadSingle(uint8_t reg)
+  LibXR::ErrorCode ReadSingle(uint8_t reg, uint8_t& data)
   {
-    uint8_t data = 0;
+    LibXR::Mutex::LockGuard lock(spi_mutex_);
     cs_->Write(false);
-    spi_->MemRead(reg, LibXR::RawData(&data, 1), op_spi_);
+    const auto ans = spi_->MemRead(reg, LibXR::RawData(&data, 1), op_spi_);
     cs_->Write(true);
-    return data;
+    return ans;
   }
 
   /**
    * @brief Read a contiguous register block with one CS frame.
    * @brief_cn 在一次片选帧内读取连续寄存器块。
    */
-  void ReadBurst(uint8_t reg, uint8_t* data, size_t len)
+  LibXR::ErrorCode ReadBurst(uint8_t reg, uint8_t* data, size_t len)
   {
+    LibXR::Mutex::LockGuard lock(spi_mutex_);
     cs_->Write(false);
-    spi_->MemRead(reg, LibXR::RawData(data, len), op_spi_);
+    const auto ans = spi_->MemRead(reg, LibXR::RawData(data, len), op_spi_);
     cs_->Write(true);
+    return ans;
   }
 
   /**
    * @brief Write one LSM6DSV16X register through SPI MemWrite.
    * @brief_cn 通过 SPI MemWrite 写入单个 LSM6DSV16X 寄存器。
    */
-  void WriteSingle(uint8_t reg, uint8_t data)
+  LibXR::ErrorCode WriteSingle(uint8_t reg, uint8_t data)
   {
+    LibXR::Mutex::LockGuard lock(spi_mutex_);
     cs_->Write(false);
-    spi_->MemWrite(reg, LibXR::ConstRawData(&data, 1), op_spi_);
+    const auto ans = spi_->MemWrite(reg, LibXR::ConstRawData(&data, 1), op_spi_);
     cs_->Write(true);
+    return ans;
   }
 
   /**
@@ -564,7 +654,15 @@ class LSM6DSV16X : public LibXR::Application
 
     if (argc == 2 && std::strcmp(argv[1], "whoami") == 0)
     {
-      LibXR::STDIO::Printf<"WHO_AM_I: 0x%02X\r\n">(self->ReadSingle(REG_WHO_AM_I));
+      uint8_t whoami = 0;
+      const auto ans = self->ReadSingle(REG_WHO_AM_I, whoami);
+      if (ans != LibXR::ErrorCode::OK)
+      {
+        LibXR::STDIO::Printf<"WHO_AM_I read failed: %d\r\n">(
+            static_cast<int>(ans));
+        return -1;
+      }
+      LibXR::STDIO::Printf<"WHO_AM_I: 0x%02X\r\n">(whoami);
       return 0;
     }
 
@@ -585,11 +683,11 @@ class LSM6DSV16X : public LibXR::Application
       self->in_cali_ = true;
 
       LibXR::STDIO::Printf<"Starting LSM6DSV16X gyroscope calibration. Keep still.\r\n">();
-      LibXR::Thread::Sleep(3000);
+      self->WaitWithSampling(3000);
       for (int i = 0; i < 10; i++)
       {
         LibXR::STDIO::Printf<"Progress: %d / 10\r">(i + 1);
-        LibXR::Thread::Sleep(1000);
+        self->WaitWithSampling(1000);
       }
       LibXR::STDIO::Printf<"\r\nProgress: Done\r\n">();
 
@@ -665,16 +763,19 @@ class LSM6DSV16X : public LibXR::Application
 
   LibXR::Semaphore sem_spi_;
   LibXR::SPI::OperationRW op_spi_;
+  LibXR::Mutex spi_mutex_;
 
   LibXR::RamFS::File cmd_file_;
   LibXR::Database::Key<BiasVector> gyro_bias_key_;
 
   bool in_cali_ = false;
   uint32_t cali_counter_ = 0;
+  uint32_t consecutive_read_errors_ = 0;
   CaliVector gyro_cali_{0, 0, 0};
 
   LibXR::MicrosecondTimestamp last_sample_ts_ = 0;
   LibXR::MicrosecondTimestamp::Duration dt_ = 0;
+  LibXR::MillisecondTimestamp last_poll_ms_ = 0;
 
   LibXR::Thread thread_;
 };

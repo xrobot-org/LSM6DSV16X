@@ -49,7 +49,7 @@ Validated on HPM5361EVKLite with an LSM6DSV16X module over SPI1:
 - Register write/readback: `CTRL3` IF_INC and BDU bits verified.
 - Burst sample reads produced stable gyro/accelerometer frames.
 - DSLogic decode confirmed mode-0 frames such as `MOSI=[8F 00]`,
-  `MISO=[00 70]` and burst reads from `0x22`.
+  `MISO=[00 70]` and burst reads from `0x20`.
 
 The BSP-side test firmware and capture logs are intentionally not part of this
 module repository.
