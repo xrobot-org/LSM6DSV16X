@@ -164,6 +164,8 @@ class LSM6DSV16X : public LibXR::Application
   static constexpr uint8_t CTRL3_BDU = 0x40;
   static constexpr float DEG2RAD = 0.01745329251f;
   static constexpr size_t BURST_SIZE = 14;
+  static constexpr uint8_t INIT_RETRY_LIMIT = 30;
+  static constexpr uint32_t INIT_RETRY_DELAY_MS = 100;
 
   /**
    * @brief Output data rate setting for accelerometer or gyroscope.
@@ -259,12 +261,28 @@ class LSM6DSV16X : public LibXR::Application
                     .pull = LibXR::GPIO::Pull::UP});
     cs_->Write(true);
 
-    while (!Init())
+    bool init_ok = false;
+    for (uint8_t retry = 0; retry < INIT_RETRY_LIMIT; retry++)
     {
-      XR_LOG_ERROR("LSM6DSV16X: Init failed. Try again.");
-      LibXR::Thread::Sleep(100);
+      if (Init())
+      {
+        init_ok = true;
+        break;
+      }
+
+      XR_LOG_ERROR("LSM6DSV16X: Init failed. Retry %u/%u.",
+                   static_cast<unsigned>(retry + 1U),
+                   static_cast<unsigned>(INIT_RETRY_LIMIT));
+      LibXR::Thread::Sleep(INIT_RETRY_DELAY_MS);
     }
 
+    if (!init_ok)
+    {
+      XR_LOG_ERROR("LSM6DSV16X: Init failed. Module disabled.");
+      return;
+    }
+
+    initialized_ = true;
     XR_LOG_PASS("LSM6DSV16X: Init succeeded.");
 
 #if !defined(LIBXR_NOT_SUPPORT_MUTI_THREAD) || !(LIBXR_NOT_SUPPORT_MUTI_THREAD)
@@ -281,6 +299,11 @@ class LSM6DSV16X : public LibXR::Application
    */
   void OnMonitor() override
   {
+    if (!initialized_)
+    {
+      return;
+    }
+
 #if defined(LIBXR_NOT_SUPPORT_MUTI_THREAD) && (LIBXR_NOT_SUPPORT_MUTI_THREAD)
     const auto now = LibXR::Timebase::GetMilliseconds();
     if (uint32_t(now) - uint32_t(last_poll_ms_) >= PollIntervalMs())
@@ -368,6 +391,9 @@ class LSM6DSV16X : public LibXR::Application
     const uint8_t ctrl8 = static_cast<uint8_t>(accl_range_) & 0x03;
     const uint8_t ctrl1 = static_cast<uint8_t>(accel_datarate_) & 0x0F;
     const uint8_t ctrl2 = static_cast<uint8_t>(gyro_datarate_) & 0x0F;
+
+    gyro_scale_rad_ = GetGyroLSB() * DEG2RAD;
+    accl_scale_g_ = GetAcclLSB();
 
     if (WriteSingle(REG_CTRL3, ctrl3) != LibXR::ErrorCode::OK ||
         WriteSingle(REG_CTRL6, ctrl6) != LibXR::ErrorCode::OK ||
@@ -542,31 +568,33 @@ class LSM6DSV16X : public LibXR::Application
     const int16_t ay = MakeInt16(buffer_[11], buffer_[10]);
     const int16_t az = MakeInt16(buffer_[13], buffer_[12]);
 
-    const float gyro_lsb = GetGyroLSB();
-    const float accl_lsb = GetAcclLSB();
+    Vector3f gyro(static_cast<float>(gx) * gyro_scale_rad_,
+                  static_cast<float>(gy) * gyro_scale_rad_,
+                  static_cast<float>(gz) * gyro_scale_rad_);
+    Vector3f accl(static_cast<float>(ax) * accl_scale_g_,
+                  static_cast<float>(ay) * accl_scale_g_,
+                  static_cast<float>(az) * accl_scale_g_);
 
-    Vector3f gyro(static_cast<float>(gx) * gyro_lsb * DEG2RAD,
-                  static_cast<float>(gy) * gyro_lsb * DEG2RAD,
-                  static_cast<float>(gz) * gyro_lsb * DEG2RAD);
-    Vector3f accl(static_cast<float>(ax) * accl_lsb,
-                  static_cast<float>(ay) * accl_lsb,
-                  static_cast<float>(az) * accl_lsb);
+    BiasVector gyro_bias{};
+    {
+      LibXR::Mutex::LockGuard lock(state_mutex_);
+      gyro_bias = gyro_bias_key_.data_;
+      if (in_cali_)
+      {
+        gyro_cali_[0] += gx;
+        gyro_cali_[1] += gy;
+        gyro_cali_[2] += gz;
+        cali_counter_++;
+      }
+    }
 
-    gyro.x() -= gyro_bias_key_.data_.x();
-    gyro.y() -= gyro_bias_key_.data_.y();
-    gyro.z() -= gyro_bias_key_.data_.z();
+    gyro.x() -= gyro_bias.x();
+    gyro.y() -= gyro_bias.y();
+    gyro.z() -= gyro_bias.z();
 
     gyro_data_ = rotation_ * gyro;
     accl_data_ = rotation_ * accl;
     temperature_ = 25.0f + static_cast<float>(temp_raw) / 256.0f;
-
-    if (in_cali_)
-    {
-      gyro_cali_[0] += gx;
-      gyro_cali_[1] += gy;
-      gyro_cali_[2] += gz;
-      cali_counter_++;
-    }
 
     const auto now = LibXR::Timebase::GetMicroseconds();
     dt_ = now - last_sample_ts_;
@@ -646,7 +674,7 @@ class LSM6DSV16X : public LibXR::Application
     {
       LibXR::STDIO::Printf<"Usage:\r\n">();
       LibXR::STDIO::Printf<"  whoami\r\n">();
-      LibXR::STDIO::Printf<"  show [time_ms] [interval_ms]\r\n">();
+      LibXR::STDIO::Printf<"  show <time_ms> <interval_ms>\r\n">();
       LibXR::STDIO::Printf<"  list_offset\r\n">();
       LibXR::STDIO::Printf<"  cali\r\n">();
       return 0;
@@ -668,19 +696,33 @@ class LSM6DSV16X : public LibXR::Application
 
     if (argc == 2 && std::strcmp(argv[1], "list_offset") == 0)
     {
+      BiasVector gyro_bias{};
+      {
+        LibXR::Mutex::LockGuard lock(self->state_mutex_);
+        gyro_bias = self->gyro_bias_key_.data_;
+      }
       LibXR::STDIO::Printf<"bias_mrad_s: %d %d %d\r\n">(
-          ScaleToInt(self->gyro_bias_key_.data_.x(), 1000.0f),
-          ScaleToInt(self->gyro_bias_key_.data_.y(), 1000.0f),
-          ScaleToInt(self->gyro_bias_key_.data_.z(), 1000.0f));
+          ScaleToInt(gyro_bias.x(), 1000.0f),
+          ScaleToInt(gyro_bias.y(), 1000.0f),
+          ScaleToInt(gyro_bias.z(), 1000.0f));
       return 0;
     }
 
     if (argc == 2 && std::strcmp(argv[1], "cali") == 0)
     {
-      self->gyro_bias_key_.data_.setZero();
-      self->gyro_cali_ = CaliVector{0, 0, 0};
-      self->cali_counter_ = 0;
-      self->in_cali_ = true;
+      if (!self->initialized_)
+      {
+        LibXR::STDIO::Printf<"LSM6DSV16X calibration failed: module not initialized.\r\n">();
+        return -1;
+      }
+
+      {
+        LibXR::Mutex::LockGuard lock(self->state_mutex_);
+        self->gyro_bias_key_.data_.setZero();
+        self->gyro_cali_ = CaliVector{0, 0, 0};
+        self->cali_counter_ = 0;
+        self->in_cali_ = true;
+      }
 
       LibXR::STDIO::Printf<"Starting LSM6DSV16X gyroscope calibration. Keep still.\r\n">();
       self->WaitWithSampling(3000);
@@ -691,29 +733,39 @@ class LSM6DSV16X : public LibXR::Application
       }
       LibXR::STDIO::Printf<"\r\nProgress: Done\r\n">();
 
-      self->in_cali_ = false;
-      if (self->cali_counter_ == 0)
+      uint32_t cali_counter = 0;
+      CaliVector gyro_cali{0, 0, 0};
+      {
+        LibXR::Mutex::LockGuard lock(self->state_mutex_);
+        self->in_cali_ = false;
+        cali_counter = self->cali_counter_;
+        gyro_cali = self->gyro_cali_;
+      }
+
+      if (cali_counter == 0)
       {
         LibXR::STDIO::Printf<"LSM6DSV16X calibration failed: no samples.\r\n">();
         return -1;
       }
 
-      const float scale = self->GetGyroLSB() * DEG2RAD;
-      self->gyro_bias_key_.data_.x() =
-          static_cast<float>(self->gyro_cali_[0]) /
-          static_cast<float>(self->cali_counter_) * scale;
-      self->gyro_bias_key_.data_.y() =
-          static_cast<float>(self->gyro_cali_[1]) /
-          static_cast<float>(self->cali_counter_) * scale;
-      self->gyro_bias_key_.data_.z() =
-          static_cast<float>(self->gyro_cali_[2]) /
-          static_cast<float>(self->cali_counter_) * scale;
-      self->gyro_bias_key_.Set(self->gyro_bias_key_.data_);
+      BiasVector gyro_bias{};
+      gyro_bias.x() = static_cast<float>(gyro_cali[0]) /
+                      static_cast<float>(cali_counter) * self->gyro_scale_rad_;
+      gyro_bias.y() = static_cast<float>(gyro_cali[1]) /
+                      static_cast<float>(cali_counter) * self->gyro_scale_rad_;
+      gyro_bias.z() = static_cast<float>(gyro_cali[2]) /
+                      static_cast<float>(cali_counter) * self->gyro_scale_rad_;
+
+      {
+        LibXR::Mutex::LockGuard lock(self->state_mutex_);
+        self->gyro_bias_key_.data_ = gyro_bias;
+        self->gyro_bias_key_.Set(self->gyro_bias_key_.data_);
+      }
 
       LibXR::STDIO::Printf<"bias_mrad_s saved: %d %d %d\r\n">(
-          ScaleToInt(self->gyro_bias_key_.data_.x(), 1000.0f),
-          ScaleToInt(self->gyro_bias_key_.data_.y(), 1000.0f),
-          ScaleToInt(self->gyro_bias_key_.data_.z(), 1000.0f));
+          ScaleToInt(gyro_bias.x(), 1000.0f),
+          ScaleToInt(gyro_bias.y(), 1000.0f),
+          ScaleToInt(gyro_bias.z(), 1000.0f));
       return 0;
     }
 
@@ -753,6 +805,8 @@ class LSM6DSV16X : public LibXR::Application
 
   Rotation rotation_;
   float poll_interval_ms_ = 2.0f;
+  float gyro_scale_rad_ = 0.0f;
+  float accl_scale_g_ = 0.0f;
   float temperature_ = 0.0f;
 
   LibXR::Topic topic_gyro_;
@@ -764,10 +818,12 @@ class LSM6DSV16X : public LibXR::Application
   LibXR::Semaphore sem_spi_;
   LibXR::SPI::OperationRW op_spi_;
   LibXR::Mutex spi_mutex_;
+  LibXR::Mutex state_mutex_;
 
   LibXR::RamFS::File cmd_file_;
   LibXR::Database::Key<BiasVector> gyro_bias_key_;
 
+  bool initialized_ = false;
   bool in_cali_ = false;
   uint32_t cali_counter_ = 0;
   uint32_t consecutive_read_errors_ = 0;
