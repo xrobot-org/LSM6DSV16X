@@ -674,7 +674,7 @@ class LSM6DSV16X : public LibXR::Application
     {
       LibXR::STDIO::Printf<"Usage:\r\n">();
       LibXR::STDIO::Printf<"  whoami\r\n">();
-      LibXR::STDIO::Printf<"  show <time_ms> <interval_ms>\r\n">();
+      LibXR::STDIO::Printf<"  show <time_ms> [interval_ms]\r\n">();
       LibXR::STDIO::Printf<"  list_offset\r\n">();
       LibXR::STDIO::Printf<"  cali\r\n">();
       return 0;
@@ -769,10 +769,21 @@ class LSM6DSV16X : public LibXR::Application
       return 0;
     }
 
-    if (argc == 4 && std::strcmp(argv[1], "show") == 0)
+    if ((argc == 3 || argc == 4) && std::strcmp(argv[1], "show") == 0)
     {
       int time = std::atoi(argv[2]);
-      int delay = std::clamp(std::atoi(argv[3]), 2, 1000);
+      if (time <= 0)
+      {
+        LibXR::STDIO::Printf<"show requires positive time_ms\r\n">();
+        return -1;
+      }
+
+      int delay = 100;
+      if (argc == 4)
+      {
+        delay = std::clamp(std::atoi(argv[3]), 2, 1000);
+      }
+
       while (time > 0)
       {
         LibXR::STDIO::Printf<
