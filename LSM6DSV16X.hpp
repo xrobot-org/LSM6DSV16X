@@ -107,13 +107,25 @@ class LSM6DSV16X : public LibXR::Application
 
     Vector3f operator*(const Vector3f& v) const
     {
-      const float tx = 2.0f * (y * v.z() - z * v.y());
-      const float ty = 2.0f * (z * v.x() - x * v.z());
-      const float tz = 2.0f * (x * v.y() - y * v.x());
+      const float norm_sq = w * w + x * x + y * y + z * z;
+      if (norm_sq <= 0.0f)
+      {
+        return v;
+      }
 
-      return Vector3f(v.x() + w * tx + (y * tz - z * ty),
-                      v.y() + w * ty + (z * tx - x * tz),
-                      v.z() + w * tz + (x * ty - y * tx));
+      const float inv_norm = 1.0f / std::sqrt(norm_sq);
+      const float qw = w * inv_norm;
+      const float qx = x * inv_norm;
+      const float qy = y * inv_norm;
+      const float qz = z * inv_norm;
+
+      const float tx = 2.0f * (qy * v.z() - qz * v.y());
+      const float ty = 2.0f * (qz * v.x() - qx * v.z());
+      const float tz = 2.0f * (qx * v.y() - qy * v.x());
+
+      return Vector3f(v.x() + qw * tx + (qy * tz - qz * ty),
+                      v.y() + qw * ty + (qz * tx - qx * tz),
+                      v.z() + qw * tz + (qx * ty - qy * tx));
     }
   };
 
