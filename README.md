@@ -1,36 +1,35 @@
 # LSM6DSV16X
 
-ST LSM6DSV16X 6-axis IMU driver module for xrobot / LibXR.
+ST LSM6DSV16X 六轴 IMU 的 xrobot / LibXR 驱动模块。
 
-## Features
+## 功能
 
-- SPI mode 0 register access with manual GPIO chip select.
-- Configurable accelerometer and gyroscope ODR/range.
-- Polling sample thread, no data-ready interrupt required.
-- Register configuration is verified by readback during initialization.
-- Publishes:
-  - `lsm6dsv16x_gyro`: gyroscope data in rad/s.
-  - `lsm6dsv16x_accl`: accelerometer data in g.
-- RamFS command file `lsm6dsv16x`:
+- 使用 SPI mode 0 访问寄存器，并通过 GPIO 手动控制片选。
+- 支持配置加速度计和陀螺仪的 ODR / 量程。
+- 使用轮询采样线程，不依赖 data-ready 中断。
+- 初始化时会回读校验寄存器配置。
+- 发布数据：
+  - `lsm6dsv16x_gyro`：单位为 rad/s 的陀螺仪数据。
+  - `lsm6dsv16x_accl`：单位为 g 的加速度计数据。
+- 提供 RamFS 命令文件 `lsm6dsv16x`：
   - `show [time_ms] [interval_ms]`
   - `whoami`
   - `list_offset`
   - `cali`
 
-## Hardware
+## 硬件连接
 
-Required LibXR objects:
+需要提供以下 LibXR 对象：
 
 - `ramfs`
 - `database`
-- SPI instance named by `spi_name`
-- GPIO CS instance named by `cs_name`
+- 由 `spi_name` 指定的 SPI 实例
+- 由 `cs_name` 指定的 GPIO 片选实例
 
-The SPI object must use mode 0 (`CPOL=0`, `CPHA=0`). The module controls CS
-with GPIO, so the target SPI driver should not rely on hardware CS framing for
-multi-byte sensor transactions.
+SPI 对象必须使用 mode 0（`CPOL=0`，`CPHA=0`）。模块内部通过 GPIO 控制
+CS，因此目标 SPI 驱动不应依赖硬件 CS 对多字节传感器事务进行自动分帧。
 
-SPI wiring used during HPM5361EVKLite validation:
+HPM5361EVKLite 实机验证时使用的 SPI 接线：
 
 - `CS` -> `PA26`
 - `SCLK` -> `PA27`
@@ -38,23 +37,22 @@ SPI wiring used during HPM5361EVKLite validation:
 - `MOSI` -> `PA29`
 - SPI mode 0
 
-## Validation
+## 实机验证
 
-Validated on HPM5361EVKLite with an LSM6DSV16X module over SPI1:
+已在 HPM5361EVKLite 上通过 SPI1 连接 LSM6DSV16X 模块完成验证：
 
-- GPIO bit-bang WHO_AM_I read: `0x70`.
-- LibXR `SPI::MemRead` WHO_AM_I read: `0x70`.
-- LibXR blocking `SPI::ReadAndWrite` WHO_AM_I read: `0x70`.
-- LibXR DMA `SPI::ReadAndWrite` WHO_AM_I read: `0x70`.
-- Register write/readback: `CTRL3` IF_INC and BDU bits verified.
-- Burst sample reads produced stable gyro/accelerometer frames.
-- DSLogic decode confirmed mode-0 frames such as `MOSI=[8F 00]`,
-  `MISO=[00 70]` and burst reads from `0x20`.
+- GPIO 模拟 SPI 读取 WHO_AM_I：`0x70`。
+- LibXR `SPI::MemRead` 读取 WHO_AM_I：`0x70`。
+- LibXR 阻塞 `SPI::ReadAndWrite` 读取 WHO_AM_I：`0x70`。
+- LibXR DMA `SPI::ReadAndWrite` 读取 WHO_AM_I：`0x70`。
+- 寄存器写入 / 回读：已验证 `CTRL3` 的 IF_INC 和 BDU 位。
+- 连续读取采样数据时，陀螺仪和加速度计帧稳定。
+- DSLogic 解码确认 mode-0 帧格式正确，例如 `MOSI=[8F 00]`、
+  `MISO=[00 70]`，以及从 `0x20` 开始的连续读取。
 
-The BSP-side test firmware and capture logs are intentionally not part of this
-module repository.
+BSP 侧测试固件和逻辑分析仪抓包日志不属于本模块仓库，已刻意排除。
 
-## Example
+## 配置示例
 
 ```yaml
 module: LSM6DSV16X
