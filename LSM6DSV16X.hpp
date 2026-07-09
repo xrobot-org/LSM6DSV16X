@@ -143,7 +143,7 @@ class LSM6DSV16X : public LibXR::Application
 
   /** @brief Raw gyroscope accumulator type used during calibration. */
   /** @brief_cn 校准时用于累加陀螺仪原始值的类型。 */
-  using CaliVector = Eigen::Matrix<int64_t, 3, 1>;
+  using CaliVector = std::array<int64_t, 3>;
 #endif
 
   /** @brief LSM6DSV16X register addresses used by this module. */
