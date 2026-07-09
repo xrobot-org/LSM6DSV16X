@@ -313,9 +313,18 @@ class LSM6DSV16X : public LibXR::Application
     }
 #endif
 
-    if (!std::isfinite(gyro_data_.x()) || !std::isfinite(gyro_data_.y()) ||
-        !std::isfinite(gyro_data_.z()) || !std::isfinite(accl_data_.x()) ||
-        !std::isfinite(accl_data_.y()) || !std::isfinite(accl_data_.z()))
+    bool bad_data = false;
+    {
+      LibXR::Mutex::LockGuard lock(state_mutex_);
+      bad_data = !std::isfinite(gyro_data_.x()) ||
+                 !std::isfinite(gyro_data_.y()) ||
+                 !std::isfinite(gyro_data_.z()) ||
+                 !std::isfinite(accl_data_.x()) ||
+                 !std::isfinite(accl_data_.y()) ||
+                 !std::isfinite(accl_data_.z());
+    }
+
+    if (bad_data)
     {
       XR_LOG_WARN("LSM6DSV16X: bad data");
     }
@@ -464,10 +473,12 @@ class LSM6DSV16X : public LibXR::Application
     if (ReadBurst(REG_OUT_TEMP_L, buffer_.data(), BURST_SIZE) == LibXR::ErrorCode::OK)
     {
       consecutive_read_errors_ = 0;
-      Parse();
-      const auto sample_ts = last_sample_ts_;
-      topic_accl_.Publish(accl_data_, sample_ts);
-      topic_gyro_.Publish(gyro_data_, sample_ts);
+      Vector3f gyro_data(0.0f, 0.0f, 0.0f);
+      Vector3f accl_data(0.0f, 0.0f, 0.0f);
+      LibXR::MicrosecondTimestamp sample_ts = 0;
+      Parse(gyro_data, accl_data, sample_ts);
+      topic_accl_.Publish(accl_data, sample_ts);
+      topic_gyro_.Publish(gyro_data, sample_ts);
       return;
     }
 
@@ -558,7 +569,8 @@ class LSM6DSV16X : public LibXR::Application
    * @details_cn 陀螺仪输出转换为 rad/s，加速度计输出转换为 g，并在发布前应用
    * 配置的坐标旋转。
    */
-  void Parse()
+  void Parse(Vector3f& gyro_data, Vector3f& accl_data,
+             LibXR::MicrosecondTimestamp& sample_ts)
   {
     const int16_t temp_raw = MakeInt16(buffer_[1], buffer_[0]);
     const int16_t gx = MakeInt16(buffer_[3], buffer_[2]);
@@ -592,13 +604,21 @@ class LSM6DSV16X : public LibXR::Application
     gyro.y() -= gyro_bias.y();
     gyro.z() -= gyro_bias.z();
 
-    gyro_data_ = rotation_ * gyro;
-    accl_data_ = rotation_ * accl;
-    temperature_ = 25.0f + static_cast<float>(temp_raw) / 256.0f;
-
+    const Vector3f rotated_gyro = rotation_ * gyro;
+    const Vector3f rotated_accl = rotation_ * accl;
+    const float temperature = 25.0f + static_cast<float>(temp_raw) / 256.0f;
     const auto now = LibXR::Timebase::GetMicroseconds();
-    dt_ = now - last_sample_ts_;
-    last_sample_ts_ = now;
+    {
+      LibXR::Mutex::LockGuard lock(state_mutex_);
+      gyro_data_ = rotated_gyro;
+      accl_data_ = rotated_accl;
+      temperature_ = temperature;
+      dt_ = now - last_sample_ts_;
+      last_sample_ts_ = now;
+      gyro_data = gyro_data_;
+      accl_data = accl_data_;
+      sample_ts = last_sample_ts_;
+    }
   }
 
   /**
@@ -786,15 +806,25 @@ class LSM6DSV16X : public LibXR::Application
 
       while (time > 0)
       {
+        Vector3f accl_data(0.0f, 0.0f, 0.0f);
+        Vector3f gyro_data(0.0f, 0.0f, 0.0f);
+        float temperature = 0.0f;
+        {
+          LibXR::Mutex::LockGuard lock(self->state_mutex_);
+          accl_data = self->accl_data_;
+          gyro_data = self->gyro_data_;
+          temperature = self->temperature_;
+        }
+
         LibXR::STDIO::Printf<
             "acc_mg:%d %d %d | gyr_mrad_s:%d %d %d | temp_centi_c:%d\r\n">(
-            ScaleToInt(self->accl_data_.x(), 1000.0f),
-            ScaleToInt(self->accl_data_.y(), 1000.0f),
-            ScaleToInt(self->accl_data_.z(), 1000.0f),
-            ScaleToInt(self->gyro_data_.x(), 1000.0f),
-            ScaleToInt(self->gyro_data_.y(), 1000.0f),
-            ScaleToInt(self->gyro_data_.z(), 1000.0f),
-            ScaleToInt(self->temperature_, 100.0f));
+            ScaleToInt(accl_data.x(), 1000.0f),
+            ScaleToInt(accl_data.y(), 1000.0f),
+            ScaleToInt(accl_data.z(), 1000.0f),
+            ScaleToInt(gyro_data.x(), 1000.0f),
+            ScaleToInt(gyro_data.y(), 1000.0f),
+            ScaleToInt(gyro_data.z(), 1000.0f),
+            ScaleToInt(temperature, 100.0f));
         LibXR::Thread::Sleep(delay);
         time -= delay;
       }
