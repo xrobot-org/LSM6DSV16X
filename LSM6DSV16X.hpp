@@ -240,19 +240,26 @@ class LSM6DSV16X
    *              Configuration parameters.
    */
   LSM6DSV16X(
-      LibXR::SPI& spi,
-      LibXR::GPIO& cs,
-      LibXR::Database& database,
-      LibXR::RamFS& ramfs,
-      const Param& param = {.gyro_datarate = LSM6DSV16X::DataRate::DATA_RATE_120HZ, .accel_datarate = LSM6DSV16X::DataRate::DATA_RATE_120HZ, .accl_range = LSM6DSV16X::AcclRange::RANGE_8G, .gyro_range = LSM6DSV16X::GyroRange::DPS_2000, .rotation = {1.0f, 0.0f, 0.0f, 0.0f}, .poll_interval_ms = 2.0f, .task_stack_depth = 1024, .gyro_topic_name = "lsm6dsv16x_gyro", .accl_topic_name = "lsm6dsv16x_accl"})
+      LibXR::SPI& spi, LibXR::GPIO& cs, LibXR::Database& database, LibXR::RamFS& ramfs,
+      const Param& param = {.gyro_datarate = LSM6DSV16X::DataRate::DATA_RATE_120HZ,
+                            .accel_datarate = LSM6DSV16X::DataRate::DATA_RATE_120HZ,
+                            .accl_range = LSM6DSV16X::AcclRange::RANGE_8G,
+                            .gyro_range = LSM6DSV16X::GyroRange::DPS_2000,
+                            .rotation = {1.0f, 0.0f, 0.0f, 0.0f},
+                            .poll_interval_ms = 2.0f,
+                            .task_stack_depth = 1024,
+                            .gyro_topic_name = "lsm6dsv16x_gyro",
+                            .accl_topic_name = "lsm6dsv16x_accl"})
       : gyro_datarate_(param.gyro_datarate),
         accel_datarate_(param.accel_datarate),
         accl_range_(param.accl_range),
         gyro_range_(param.gyro_range),
         rotation_(param.rotation),
         poll_interval_ms_(param.poll_interval_ms),
-        topic_gyro_(LibXR::Topic::CreateTopic<decltype(gyro_data_)>(param.gyro_topic_name)),
-        topic_accl_(LibXR::Topic::CreateTopic<decltype(accl_data_)>(param.accl_topic_name)),
+        topic_gyro_(
+            LibXR::Topic::CreateTopic<decltype(gyro_data_)>(param.gyro_topic_name)),
+        topic_accl_(
+            LibXR::Topic::CreateTopic<decltype(accl_data_)>(param.accl_topic_name)),
         cs_(std::addressof(cs)),
         spi_(std::addressof(spi)),
         op_spi_(sem_spi_),
