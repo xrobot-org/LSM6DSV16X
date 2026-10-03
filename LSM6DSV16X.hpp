@@ -2,7 +2,7 @@
 
 // clang-format off
 /* === MODULE MANIFEST V2 ===
-module_description: ST LSM6DSV16X 六轴 IMU 传感器模块 / ST LSM6DSV16X 6-axis IMU driver
+module_description: ST LSM6DSV16X 6 轴 IMU（SPI）驱动模块 / Driver Module for the ST LSM6DSV16X 6-axis IMU over SPI
 depends: []
 === END MANIFEST === */
 // clang-format on
