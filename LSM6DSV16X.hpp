@@ -393,19 +393,31 @@ class LSM6DSV16X
   }
 
   /**
-   * @brief 轮询线程：读取一帧完整传感器数据并发布 Topic。
+   * @brief 轮询线程：读取一帧完整传感器数据并发布 Topic；读取失败时丢弃该帧，
+   *        并在连续失败的第一次输出警告。
    *        Polling thread that reads one complete sample frame and publishes the
-   *        Topics.
+   *        Topics; when the read fails, the frame is dropped and a warning is logged
+   *        on the first failure of a run.
    */
   static void ThreadFunc(LSM6DSV16X* self)
   {
+    bool read_failed = false;
     while (true)
     {
-      self->ReadBurst(REG_OUT_TEMP_L, self->buffer_.data(), BURST_SIZE);
-      self->Parse();
-      const auto sample_ts = self->last_sample_ts_;
-      self->topic_accl_.Publish(self->accl_data_, sample_ts);
-      self->topic_gyro_.Publish(self->gyro_data_, sample_ts);
+      if (self->ReadBurst(REG_OUT_TEMP_L, self->buffer_.data(), BURST_SIZE) ==
+          LibXR::ErrorCode::OK)
+      {
+        read_failed = false;
+        self->Parse();
+        const auto sample_ts = self->last_sample_ts_;
+        self->topic_accl_.Publish(self->accl_data_, sample_ts);
+        self->topic_gyro_.Publish(self->gyro_data_, sample_ts);
+      }
+      else if (!read_failed)
+      {
+        read_failed = true;
+        XR_LOG_WARN("LSM6DSV16X: burst read failed");
+      }
       LibXR::Thread::Sleep(self->PollIntervalMs());
     }
   }
@@ -436,12 +448,22 @@ class LSM6DSV16X
   /**
    * @brief 在一次片选帧内读取连续寄存器块。
    *        Read a contiguous register block with one CS frame.
+   *
+   * @param reg 起始寄存器地址。
+   *            Start register address.
+   * @param data 接收缓冲区。
+   *             Receive buffer.
+   * @param len 读取的字节数。
+   *            Number of bytes to read.
+   * @return SPI MemRead 的返回值，成功为 ErrorCode::OK。
+   *         Result of the SPI MemRead; ErrorCode::OK on success.
    */
-  void ReadBurst(uint8_t reg, uint8_t* data, size_t len)
+  LibXR::ErrorCode ReadBurst(uint8_t reg, uint8_t* data, size_t len)
   {
     cs_->Write(false);
-    spi_->MemRead(reg, LibXR::RawData(data, len), op_spi_);
+    const auto ans = spi_->MemRead(reg, LibXR::RawData(data, len), op_spi_);
     cs_->Write(true);
+    return ans;
   }
 
   /**

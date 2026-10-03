@@ -6,7 +6,7 @@ ST LSM6DSV16X 6 轴 IMU（SPI）驱动模块 / Driver Module for the ST LSM6DSV1
 
 LSM6DSV16X 通过 SPI 模式 0 访问芯片，片选由模块通过 GPIO 控制。加速度计与陀螺仪的输出数据率和量程可配置。初始化时寄存器配置通过读回校验；失败时构造函数每 100 ms 重试，直到成功。
 
-采样线程 `lsm6dsv16x_thread`（REALTIME 优先级）以轮询方式每隔 `poll_interval_ms`（限制在 1 到 1000 ms）读取一帧完整数据，并发布两个 Topic：
+采样线程 `lsm6dsv16x_thread`（REALTIME 优先级）以轮询方式每隔 `poll_interval_ms`（限制在 1 到 1000 ms）读取一帧完整数据并发布两个 Topic；SPI 读取失败时丢弃该帧，连续失败的第一次输出警告，下一周期重新读取：
 
 - `gyro_topic_name`（默认 `lsm6dsv16x_gyro`）：陀螺仪，单位 rad/s，已去零偏并经 `rotation` 旋转。
 - `accl_topic_name`（默认 `lsm6dsv16x_accl`）：加速度计，单位 g，已经 `rotation` 旋转。
@@ -22,7 +22,7 @@ LSM6DSV16X 通过 SPI 模式 0 访问芯片，片选由模块通过 GPIO 控制�
 
 The LSM6DSV16X accesses the chip over SPI mode 0, with the chip select driven by the Module through a GPIO. The output data rate and range of the accelerometer and the gyroscope are configurable. During initialization the register configuration is verified by readback; on failure the constructor retries every 100 ms until it succeeds.
 
-The sampling thread `lsm6dsv16x_thread` (REALTIME priority) polls and reads one complete frame every `poll_interval_ms` (limited to 1 to 1000 ms), and publishes two Topics:
+The sampling thread `lsm6dsv16x_thread` (REALTIME priority) polls and reads one complete frame every `poll_interval_ms` (limited to 1 to 1000 ms) and publishes two Topics; when the SPI read fails, the frame is dropped, a warning is logged on the first failure of a run, and the next cycle reads again:
 
 - `gyro_topic_name` (default `lsm6dsv16x_gyro`): gyroscope in rad/s, zero offset removed and rotated by `rotation`.
 - `accl_topic_name` (default `lsm6dsv16x_accl`): accelerometer in g, rotated by `rotation`.
