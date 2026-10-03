@@ -29,22 +29,23 @@ depends: []
 #endif
 
 /**
- * @brief ST LSM6DSV16X 6-axis IMU module.
- * @brief_cn ST LSM6DSV16X 六轴 IMU 模块。
+ * @brief ST LSM6DSV16X 6 轴 IMU 驱动模块。
+ *        Driver Module for the ST LSM6DSV16X 6-axis IMU.
  *
- * @details The module talks to LSM6DSV16X over SPI mode 0 with a GPIO-managed
- * chip select, configures ODR/ranges, polls sensor data, and publishes gyro
- * data in rad/s plus accelerometer data in g.
- * @details_cn 模块使用 SPI mode 0 和 GPIO 手动片选访问 LSM6DSV16X，完成
- * ODR/量程配置，轮询读取数据，并发布 rad/s 单位陀螺仪数据与 g 单位加速度数据。
+ * 模块使用 SPI 模式 0 和 GPIO 片选访问 LSM6DSV16X，完成 ODR 与量程配置，轮询读取数据，
+ * 并发布单位为 rad/s 的陀螺仪数据和单位为 g 的加速度数据。
+ *
+ * The Module accesses the LSM6DSV16X over SPI mode 0 with a GPIO chip select,
+ * configures the ODR and ranges, polls the data, and publishes the gyroscope data in
+ * rad/s and the accelerometer data in g.
  */
 class LSM6DSV16X
 {
  public:
 #ifdef LIBXR_NO_EIGEN
   /**
-   * @brief Minimal 3D vector used when LibXR is built without Eigen.
-   * @brief_cn LibXR 关闭 Eigen 时使用的轻量三维向量。
+   * @brief LibXR 关闭 Eigen 时使用的轻量三维向量。
+   *        Minimal 3D vector used when LibXR is built without Eigen.
    */
   struct Vector3f
   {
@@ -69,8 +70,8 @@ class LSM6DSV16X
   };
 
   /**
-   * @brief Minimal quaternion for vector rotation when Eigen is unavailable.
-   * @brief_cn 无 Eigen 时用于向量旋转的轻量四元数。
+   * @brief 无 Eigen 时用于向量旋转的轻量四元数。
+   *        Minimal quaternion for vector rotation when Eigen is unavailable.
    */
   struct Quaternionf
   {
@@ -97,37 +98,37 @@ class LSM6DSV16X
     }
   };
 
-  /** @brief Rotation quaternion type used by the module. */
-  /** @brief_cn 模块使用的姿态旋转四元数类型。 */
+  /// 模块使用的姿态旋转四元数类型
+  /// Rotation quaternion type used by the Module
   using Rotation = Quaternionf;
 
-  /** @brief Gyroscope bias vector stored in the database, unit: rad/s. */
-  /** @brief_cn 存入数据库的陀螺仪零偏向量，单位：rad/s。 */
+  /// 存入 Database 的陀螺仪零偏向量，单位 rad/s
+  /// Gyroscope zero-offset vector stored in the Database, in rad/s
   using BiasVector = Vector3f;
 
-  /** @brief Raw gyroscope accumulator type used during calibration. */
-  /** @brief_cn 校准时用于累加陀螺仪原始值的类型。 */
+  /// 校准时累加陀螺仪原始值的类型
+  /// Type that accumulates the raw gyroscope values during calibration
   using CaliVector = std::array<int64_t, 3>;
 #else
-  /** @brief 3D vector type used for sensor samples. */
-  /** @brief_cn 传感器采样使用的三维向量类型。 */
+  /// 传感器采样使用的三维向量类型
+  /// 3D vector type used for sensor samples
   using Vector3f = Eigen::Matrix<float, 3, 1>;
 
-  /** @brief Rotation quaternion type used by the module. */
-  /** @brief_cn 模块使用的姿态旋转四元数类型。 */
+  /// 模块使用的姿态旋转四元数类型
+  /// Rotation quaternion type used by the Module
   using Rotation = LibXR::Quaternion<float>;
 
-  /** @brief Gyroscope bias vector stored in the database, unit: rad/s. */
-  /** @brief_cn 存入数据库的陀螺仪零偏向量，单位：rad/s。 */
+  /// 存入 Database 的陀螺仪零偏向量，单位 rad/s
+  /// Gyroscope zero-offset vector stored in the Database, in rad/s
   using BiasVector = Eigen::Matrix<float, 3, 1>;
 
-  /** @brief Raw gyroscope accumulator type used during calibration. */
-  /** @brief_cn 校准时用于累加陀螺仪原始值的类型。 */
+  /// 校准时累加陀螺仪原始值的类型
+  /// Type that accumulates the raw gyroscope values during calibration
   using CaliVector = Eigen::Matrix<int64_t, 3, 1>;
 #endif
 
-  /** @brief LSM6DSV16X register addresses used by this module. */
-  /** @brief_cn 本模块使用到的 LSM6DSV16X 寄存器地址。 */
+  /// @name 寄存器地址 Register addresses
+  /// @{
   static constexpr uint8_t REG_WHO_AM_I = 0x0F;
   static constexpr uint8_t REG_CTRL1 = 0x10;
   static constexpr uint8_t REG_CTRL2 = 0x11;
@@ -135,90 +136,108 @@ class LSM6DSV16X
   static constexpr uint8_t REG_CTRL6 = 0x15;
   static constexpr uint8_t REG_CTRL8 = 0x17;
   static constexpr uint8_t REG_OUT_TEMP_L = 0x20;
+  /// @}
 
-  /** @brief Fixed device ID and control-bit masks. */
-  /** @brief_cn 固定设备 ID 与控制位掩码。 */
+  /// @name 设备 ID 与控制位掩码 Device ID and control-bit masks
+  /// @{
   static constexpr uint8_t WHO_AM_I_VALUE = 0x70;
   static constexpr uint8_t CTRL3_SW_RESET = 0x01;
   static constexpr uint8_t CTRL3_IF_INC = 0x04;
   static constexpr uint8_t CTRL3_BDU = 0x40;
   static constexpr float DEG2RAD = 0.01745329251f;
   static constexpr size_t BURST_SIZE = 14;
+  /// @}
 
   /**
-   * @brief Output data rate setting for accelerometer or gyroscope.
-   * @brief_cn 加速度计或陀螺仪输出数据率配置。
+   * @brief 加速度计或陀螺仪输出数据率配置。
+   *        Output data rate setting for accelerometer or gyroscope.
    */
   enum class DataRate : uint8_t
   {
-    POWER_DOWN = 0x00,        ///< Power-down mode. / 掉电模式。
-    DATA_RATE_1_875HZ = 0x01, ///< 1.875 Hz output data rate. / 1.875 Hz 输出数据率。
-    DATA_RATE_7_5HZ = 0x02,   ///< 7.5 Hz output data rate. / 7.5 Hz 输出数据率。
-    DATA_RATE_15HZ = 0x03,    ///< 15 Hz output data rate. / 15 Hz 输出数据率。
-    DATA_RATE_30HZ = 0x04,    ///< 30 Hz output data rate. / 30 Hz 输出数据率。
-    DATA_RATE_60HZ = 0x05,    ///< 60 Hz output data rate. / 60 Hz 输出数据率。
-    DATA_RATE_120HZ = 0x06,   ///< 120 Hz output data rate. / 120 Hz 输出数据率。
-    DATA_RATE_240HZ = 0x07,   ///< 240 Hz output data rate. / 240 Hz 输出数据率。
-    DATA_RATE_480HZ = 0x08,   ///< 480 Hz output data rate. / 480 Hz 输出数据率。
-    DATA_RATE_960HZ = 0x09,   ///< 960 Hz output data rate. / 960 Hz 输出数据率。
-    DATA_RATE_1920HZ = 0x0A,  ///< 1920 Hz output data rate. / 1920 Hz 输出数据率。
-    DATA_RATE_3840HZ = 0x0B,  ///< 3840 Hz output data rate. / 3840 Hz 输出数据率。
-    DATA_RATE_7680HZ = 0x0C,  ///< 7680 Hz output data rate. / 7680 Hz 输出数据率。
+    POWER_DOWN = 0x00,         ///< 掉电模式 Power-down mode
+    DATA_RATE_1_875HZ = 0x01,  ///< 1.875 Hz
+    DATA_RATE_7_5HZ = 0x02,    ///< 7.5 Hz
+    DATA_RATE_15HZ = 0x03,     ///< 15 Hz
+    DATA_RATE_30HZ = 0x04,     ///< 30 Hz
+    DATA_RATE_60HZ = 0x05,     ///< 60 Hz
+    DATA_RATE_120HZ = 0x06,    ///< 120 Hz
+    DATA_RATE_240HZ = 0x07,    ///< 240 Hz
+    DATA_RATE_480HZ = 0x08,    ///< 480 Hz
+    DATA_RATE_960HZ = 0x09,    ///< 960 Hz
+    DATA_RATE_1920HZ = 0x0A,   ///< 1920 Hz
+    DATA_RATE_3840HZ = 0x0B,   ///< 3840 Hz
+    DATA_RATE_7680HZ = 0x0C,   ///< 7680 Hz
   };
 
   /**
-   * @brief Gyroscope full-scale range.
-   * @brief_cn 陀螺仪满量程配置。
+   * @brief 陀螺仪满量程配置。
+   *        Gyroscope full-scale range.
    */
   enum class GyroRange : uint8_t
   {
-    DPS_125 = 0x00,  ///< ±125 dps full scale. / ±125 dps 满量程。
-    DPS_250 = 0x01,  ///< ±250 dps full scale. / ±250 dps 满量程。
-    DPS_500 = 0x02,  ///< ±500 dps full scale. / ±500 dps 满量程。
-    DPS_1000 = 0x03, ///< ±1000 dps full scale. / ±1000 dps 满量程。
-    DPS_2000 = 0x04, ///< ±2000 dps full scale. / ±2000 dps 满量程。
-    DPS_4000 = 0x0C, ///< ±4000 dps full scale. / ±4000 dps 满量程。
+    DPS_125 = 0x00,   ///< ±125 dps
+    DPS_250 = 0x01,   ///< ±250 dps
+    DPS_500 = 0x02,   ///< ±500 dps
+    DPS_1000 = 0x03,  ///< ±1000 dps
+    DPS_2000 = 0x04,  ///< ±2000 dps
+    DPS_4000 = 0x0C,  ///< ±4000 dps
   };
 
   /**
-   * @brief Accelerometer full-scale range.
-   * @brief_cn 加速度计满量程配置。
+   * @brief 加速度计满量程配置。
+   *        Accelerometer full-scale range.
    */
   enum class AcclRange : uint8_t
   {
-    RANGE_2G = 0x00,  ///< ±2 g full scale. / ±2 g 满量程。
-    RANGE_4G = 0x01,  ///< ±4 g full scale. / ±4 g 满量程。
-    RANGE_8G = 0x02,  ///< ±8 g full scale. / ±8 g 满量程。
-    RANGE_16G = 0x03, ///< ±16 g full scale. / ±16 g 满量程。
+    RANGE_2G = 0x00,   ///< ±2 g
+    RANGE_4G = 0x01,   ///< ±4 g
+    RANGE_8G = 0x02,   ///< ±8 g
+    RANGE_16G = 0x03,  ///< ±16 g
   };
 
   /**
-   * @brief Value configuration of an LSM6DSV16X module.
-   * @brief_cn LSM6DSV16X 模块的数值配置。
+   * @brief LSM6DSV16X 配置参数。
+   *        LSM6DSV16X configuration parameters.
    */
   struct Param
   {
-    DataRate gyro_datarate;       ///< Gyroscope ODR. / 陀螺仪输出数据率。
-    DataRate accel_datarate;      ///< Accelerometer ODR. / 加速度计输出数据率。
-    AcclRange accl_range;         ///< Accelerometer full-scale range. / 加速度计满量程。
-    GyroRange gyro_range;         ///< Gyroscope full-scale range. / 陀螺仪满量程。
-    Rotation rotation;            ///< Body-frame rotation quaternion. / 机体系旋转四元数。
-    float poll_interval_ms;       ///< Polling interval in milliseconds. / 轮询间隔，单位 ms。
-    size_t task_stack_depth;      ///< Sampling thread stack depth. / 采样线程栈深度。
-    const char* gyro_topic_name;  ///< Gyroscope topic name. / 陀螺仪发布话题名称。
-    const char* accl_topic_name;  ///< Accelerometer topic name. / 加速度计发布话题名称。
+    DataRate gyro_datarate;  ///< 陀螺仪输出数据率
+    ///< Gyroscope ODR
+    DataRate accel_datarate;  ///< 加速度计输出数据率
+    ///< Accelerometer ODR
+    AcclRange accl_range;  ///< 加速度计满量程
+    ///< Accelerometer full-scale range
+    GyroRange gyro_range;  ///< 陀螺仪满量程
+    ///< Gyroscope full-scale range
+    Rotation rotation;  ///< 机体系旋转四元数 (w, x, y, z)
+    ///< Body-frame rotation quaternion (w, x, y, z)
+    float poll_interval_ms;  ///< 轮询间隔 (ms)，限制在 1 到 1000 ms
+    ///< Polling interval (ms), limited to 1 to 1000 ms
+    size_t task_stack_depth;  ///< 轮询线程栈深
+    ///< Polling thread stack depth
+    const char* gyro_topic_name;  ///< 陀螺仪 Topic 名称
+    ///< Gyroscope Topic name
+    const char* accl_topic_name;  ///< 加速度计 Topic 名称
+    ///< Accelerometer Topic name
   };
 
   /**
-   * @brief Construct an LSM6DSV16X module.
-   * @brief_cn 构造 LSM6DSV16X 模块。
+   * @brief 构造 LSM6DSV16X：配置片选与 RamFS 命令，初始化传感器（失败时每 100 ms 重试）
+   *        并创建轮询线程。
+   *        Construct LSM6DSV16X: configure the chip select and the RamFS command,
+   *        initialize the sensor (retrying every 100 ms on failure) and create the
+   *        polling thread.
    *
-   * @param spi SPI bus connected to the sensor. / 连接传感器的 SPI 总线。
-   * @param cs GPIO used as chip select. / 用作片选的 GPIO。
-   * @param database Database that stores the gyroscope bias. / 存储陀螺仪零偏的数据库。
-   * @param ramfs RamFS that receives the `lsm6dsv16x` command file. / 注册
-   * `lsm6dsv16x` 命令文件的 RamFS。
-   * @param param Value configuration. / 数值配置。
+   * @param spi 连接传感器的 SPI，使用模式 0。
+   *            SPI connected to the sensor, using mode 0.
+   * @param cs 用作片选的 GPIO。
+   *           GPIO used as chip select.
+   * @param database 保存陀螺仪零偏的 Database。
+   *                 Database that stores the gyroscope zero offset.
+   * @param ramfs 接收 `lsm6dsv16x` 命令文件的 RamFS。
+   *              RamFS that receives the `lsm6dsv16x` command file.
+   * @param param 配置参数。
+   *              Configuration parameters.
    */
   LSM6DSV16X(
       LibXR::SPI& spi,
@@ -259,8 +278,8 @@ class LSM6DSV16X
   }
 
   /**
-   * @brief Periodic monitor hook; warns when the latest sample is not finite.
-   * @brief_cn 周期监控回调；最新采样出现非有限值时输出警告。
+   * @brief 监控回调：最新采样不是有限值时输出警告。
+   *        Monitor callback: log a warning when the latest sample is not finite.
    */
   void OnMonitor()
   {
@@ -274,11 +293,12 @@ class LSM6DSV16X
 
  private:
   /**
-   * @brief Probe, reset, configure, and verify the sensor.
-   * @brief_cn 探测、复位、配置并读回校验传感器。
+   * @brief 探测、复位、配置并读回校验传感器。
+   *        Probe, reset, configure and verify the sensor.
    *
-   * @retval true Device is present and configuration readback matches. / 设备存在且配置读回匹配。
-   * @retval false Device ID or configuration verification failed. / 设备 ID 或配置读回校验失败。
+   * @return 设备存在且配置读回匹配时返回 true，设备 ID 或配置校验失败时返回 false。
+   *         True when the device is present and the configuration readback matches,
+   *         false when the device ID or the configuration verification fails.
    */
   bool Init()
   {
@@ -316,8 +336,11 @@ class LSM6DSV16X
   }
 
   /**
-   * @brief Configure CTRL registers and verify writable fields by readback.
-   * @brief_cn 配置 CTRL 寄存器，并通过读回校验可写字段。
+   * @brief 配置 CTRL 寄存器，并通过读回校验可写字段。
+   *        Configure the CTRL registers and verify the writable fields by readback.
+   *
+   * @return 全部字段读回匹配时返回 true。
+   *         True when all fields match on readback.
    */
   bool ConfigureAndVerify()
   {
@@ -363,8 +386,9 @@ class LSM6DSV16X
   }
 
   /**
-   * @brief Polling worker that reads one complete sample frame and publishes topics.
-   * @brief_cn 轮询采样线程：读取一帧完整传感器数据并发布话题。
+   * @brief 轮询线程：读取一帧完整传感器数据并发布 Topic。
+   *        Polling thread that reads one complete sample frame and publishes the
+   *        Topics.
    */
   static void ThreadFunc(LSM6DSV16X* self)
   {
@@ -380,8 +404,8 @@ class LSM6DSV16X
   }
 
   /**
-   * @brief Clamp and convert the configured polling interval to milliseconds.
-   * @brief_cn 限幅并转换配置的轮询间隔到毫秒。
+   * @brief 限幅并转换配置的轮询间隔到毫秒。
+   *        Clamp and convert the configured polling interval to milliseconds.
    */
   uint32_t PollIntervalMs() const
   {
@@ -390,8 +414,8 @@ class LSM6DSV16X
   }
 
   /**
-   * @brief Read one LSM6DSV16X register through SPI MemRead.
-   * @brief_cn 通过 SPI MemRead 读取单个 LSM6DSV16X 寄存器。
+   * @brief 通过 SPI MemRead 读取单个 LSM6DSV16X 寄存器。
+   *        Read one LSM6DSV16X register through SPI MemRead.
    */
   uint8_t ReadSingle(uint8_t reg)
   {
@@ -403,8 +427,8 @@ class LSM6DSV16X
   }
 
   /**
-   * @brief Read a contiguous register block with one CS frame.
-   * @brief_cn 在一次片选帧内读取连续寄存器块。
+   * @brief 在一次片选帧内读取连续寄存器块。
+   *        Read a contiguous register block with one CS frame.
    */
   void ReadBurst(uint8_t reg, uint8_t* data, size_t len)
   {
@@ -414,8 +438,8 @@ class LSM6DSV16X
   }
 
   /**
-   * @brief Write one LSM6DSV16X register through SPI MemWrite.
-   * @brief_cn 通过 SPI MemWrite 写入单个 LSM6DSV16X 寄存器。
+   * @brief 通过 SPI MemWrite 写入单个 LSM6DSV16X 寄存器。
+   *        Write one LSM6DSV16X register through SPI MemWrite.
    */
   void WriteSingle(uint8_t reg, uint8_t data)
   {
@@ -425,13 +449,12 @@ class LSM6DSV16X
   }
 
   /**
-   * @brief Parse raw temperature, gyroscope, and accelerometer data.
-   * @brief_cn 解析温度、陀螺仪和加速度计原始数据。
+   * @brief 解析温度、陀螺仪和加速度计原始数据。
+   *        Parse the raw temperature, gyroscope and accelerometer data.
    *
-   * @details Gyroscope output is converted to rad/s; accelerometer output is
-   * converted to g. The configured rotation is applied before publication.
-   * @details_cn 陀螺仪输出转换为 rad/s，加速度计输出转换为 g，并在发布前应用
-   * 配置的坐标旋转。
+   * 陀螺仪输出转换为 rad/s，加速度计输出转换为 g，并在发布前应用配置的坐标旋转。
+   * The gyroscope output is converted to rad/s and the accelerometer output to g, and
+   * the configured rotation is applied before publication.
    */
   void Parse()
   {
@@ -475,8 +498,8 @@ class LSM6DSV16X
   }
 
   /**
-   * @brief Combine two little-endian bytes into a signed 16-bit sample.
-   * @brief_cn 将两个小端字节合成为有符号 16 位采样值。
+   * @brief 将两个小端字节合成为有符号 16 位采样值。
+   *        Combine two little-endian bytes into a signed 16-bit sample.
    */
   static int16_t MakeInt16(uint8_t msb, uint8_t lsb)
   {
@@ -485,8 +508,8 @@ class LSM6DSV16X
   }
 
   /**
-   * @brief Return accelerometer sensitivity in g/LSB.
-   * @brief_cn 返回加速度计灵敏度，单位 g/LSB。
+   * @brief 返回加速度计灵敏度，单位 g/LSB。
+   *        Return accelerometer sensitivity in g/LSB.
    */
   float GetAcclLSB() const
   {
@@ -505,8 +528,8 @@ class LSM6DSV16X
   }
 
   /**
-   * @brief Return gyroscope sensitivity in dps/LSB.
-   * @brief_cn 返回陀螺仪灵敏度，单位 dps/LSB。
+   * @brief 返回陀螺仪灵敏度，单位 dps/LSB。
+   *        Return gyroscope sensitivity in dps/LSB.
    */
   float GetGyroLSB() const
   {
@@ -529,8 +552,8 @@ class LSM6DSV16X
   }
 
   /**
-   * @brief Convert a float to a scaled integer for no-float printf builds.
-   * @brief_cn 为关闭浮点 printf 的构建将浮点值转换为缩放整数。
+   * @brief 为关闭浮点 printf 的构建将浮点值转换为缩放整数。
+   *        Convert a float to a scaled integer for no-float printf builds.
    */
   static int32_t ScaleToInt(float value, float scale)
   {
@@ -538,8 +561,8 @@ class LSM6DSV16X
   }
 
   /**
-   * @brief RamFS command entry: whoami, show, list_offset, and cali.
-   * @brief_cn RamFS 命令入口：whoami、show、list_offset 和 cali。
+   * @brief RamFS 命令入口：whoami、show、list_offset 和 cali。
+   *        RamFS command entry: whoami, show, list_offset, and cali.
    */
   static int CommandFunc(LSM6DSV16X* self, int argc, char** argv)
   {
