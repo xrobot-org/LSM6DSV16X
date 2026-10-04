@@ -1,0 +1,13 @@
+name: Module CI
+on:
+  push:
+  pull_request:
+  workflow_dispatch:
+jobs:
+  build:
+    uses: xrobot-org/XRobot/.github/workflows/module-ci.yml@dev
+    with:
+      xrobot-ref: dev
+      libxr-ref: dev
+      dependency-ref: refs/heads/dev
+      template-args: '[]'
