@@ -209,8 +209,8 @@ class LSM6DSV16X
     ///< Accelerometer full-scale range
     GyroRange gyro_range;  ///< 陀螺仪满量程
     ///< Gyroscope full-scale range
-    Rotation rotation;  ///< 机体系旋转四元数 (w, x, y, z)
-    ///< Body-frame rotation quaternion (w, x, y, z)
+    Rotation rotation;  ///< 传感器坐标系到应用坐标系的四元数 (w, x, y, z)
+    ///< Quaternion from the sensor frame to the application frame (w, x, y, z)
     float poll_interval_ms;  ///< 轮询间隔 (ms)，限制在 1 到 1000 ms
     ///< Polling interval (ms), limited to 1 to 1000 ms
     size_t task_stack_depth;  ///< 轮询线程栈深
@@ -228,8 +228,8 @@ class LSM6DSV16X
    *        initialize the sensor (retrying every 100 ms on failure) and create the
    *        polling thread.
    *
-   * @param spi 连接传感器的 SPI，使用模式 0。
-   *            SPI connected to the sensor, using mode 0.
+   * @param spi 连接传感器的 SPI，由 BSP 配置为模式 0。
+   *            SPI connected to the sensor, configured by the BSP to mode 0.
    * @param cs 用作片选的 GPIO。
    *           GPIO used as chip select.
    * @param database 保存陀螺仪零偏的 Database。

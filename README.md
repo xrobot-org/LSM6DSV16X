@@ -4,7 +4,7 @@ ST LSM6DSV16X 6 轴 IMU（SPI）驱动模块 / Driver Module for the ST LSM6DSV1
 
 ## 1. 模块作用 / Purpose
 
-LSM6DSV16X 通过 SPI 模式 0 访问芯片，片选由模块通过 GPIO 控制。加速度计与陀螺仪的输出数据率和量程可配置。初始化时寄存器配置通过读回校验；失败时构造函数每 100 ms 重试，直到成功。
+LSM6DSV16X 通过 SPI 访问芯片，SPI 由 BSP 配置为模式 0，片选由模块通过 GPIO 控制。加速度计与陀螺仪的输出数据率和量程可配置。初始化时寄存器配置通过读回校验；失败时构造函数每 100 ms 重试，直到成功。
 
 采样线程 `lsm6dsv16x_thread`（REALTIME 优先级）以轮询方式每隔 `poll_interval_ms`（限制在 1 到 1000 ms）读取一帧完整数据并发布两个 Topic；SPI 读取失败时丢弃该帧，连续失败的第一次输出警告，下一周期重新读取：
 
@@ -13,14 +13,15 @@ LSM6DSV16X 通过 SPI 模式 0 访问芯片，片选由模块通过 GPIO 控制�
 
 陀螺仪零偏保存在 Database 的键 `lsm6dsv16x_gyro_bias` 中。`OnMonitor()` 在最新采样不是有限值时输出警告。
 
-模块在 RamFS 中注册命令文件 `lsm6dsv16x`：
+模块在 RamFS 中注册命令 `lsm6dsv16x`：
 
-- `whoami`：打印 WHO_AM_I 寄存器。
-- `show <time_ms> <interval_ms>`：在 `time_ms` 内每隔 `interval_ms`（2 到 1000 ms）打印一次加速度（mg）、角速度（mrad/s）和温度（0.01 °C）。
-- `list_offset`：打印已保存的陀螺仪零偏。
-- `cali`：陀螺仪零偏校准，期间传感器保持静止。先等待 3 s，再对陀螺仪采集 10 s 求平均，约 13 s 后保存零偏。
+- `lsm6dsv16x`：打印用法。
+- `lsm6dsv16x whoami`：打印 WHO_AM_I 寄存器。
+- `lsm6dsv16x show <time_ms> <interval_ms>`：在 `time_ms` 内每隔 `interval_ms`（2 到 1000 ms）打印一次加速度（mg）、角速度（mrad/s）和温度（0.01 °C）。
+- `lsm6dsv16x list_offset`：打印已保存的陀螺仪零偏。
+- `lsm6dsv16x cali`：陀螺仪零偏校准，期间传感器保持静止。先等待 3 s，再对陀螺仪采集 10 s 求平均，约 13 s 后保存零偏。
 
-The LSM6DSV16X accesses the chip over SPI mode 0, with the chip select driven by the Module through a GPIO. The output data rate and range of the accelerometer and the gyroscope are configurable. During initialization the register configuration is verified by readback; on failure the constructor retries every 100 ms until it succeeds.
+The LSM6DSV16X accesses the chip over SPI, configured by the BSP to mode 0, with the chip select driven by the Module through a GPIO. The output data rate and range of the accelerometer and the gyroscope are configurable. During initialization the register configuration is verified by readback; on failure the constructor retries every 100 ms until it succeeds.
 
 The sampling thread `lsm6dsv16x_thread` (REALTIME priority) polls and reads one complete frame every `poll_interval_ms` (limited to 1 to 1000 ms) and publishes two Topics; when the SPI read fails, the frame is dropped, a warning is logged on the first failure of a run, and the next cycle reads again:
 
@@ -29,18 +30,19 @@ The sampling thread `lsm6dsv16x_thread` (REALTIME priority) polls and reads one 
 
 The gyroscope zero offset is stored in the Database under the key `lsm6dsv16x_gyro_bias`. `OnMonitor()` logs a warning when the latest sample is not finite.
 
-The Module registers the command file `lsm6dsv16x` in RamFS:
+The Module registers the command `lsm6dsv16x` in RamFS:
 
-- `whoami`: print the WHO_AM_I register.
-- `show <time_ms> <interval_ms>`: print the acceleration (mg), angular velocity (mrad/s) and temperature (0.01 °C) every `interval_ms` (2 to 1000 ms) for `time_ms`.
-- `list_offset`: print the stored gyroscope zero offset.
-- `cali`: gyroscope zero-offset calibration, with the sensor held still. It waits 3 s, averages the gyroscope for 10 s and saves the zero offset after about 13 s.
+- `lsm6dsv16x`: print the usage.
+- `lsm6dsv16x whoami`: print the WHO_AM_I register.
+- `lsm6dsv16x show <time_ms> <interval_ms>`: print the acceleration (mg), angular velocity (mrad/s) and temperature (0.01 °C) every `interval_ms` (2 to 1000 ms) for `time_ms`.
+- `lsm6dsv16x list_offset`: print the stored gyroscope zero offset.
+- `lsm6dsv16x cali`: gyroscope zero-offset calibration, with the sensor held still. It waits 3 s, averages the gyroscope for 10 s and saves the zero offset after about 13 s.
 
 ## 2. 时间戳约定 / Timestamp Convention
 
-`gyro_topic_name` 与 `accl_topic_name` 两个 Topic 使用同一帧数据读取完成时的时间戳（µs）发布，消费者读取 Topic 的 envelope timestamp。
+`gyro_topic_name` 与 `accl_topic_name` 两个 Topic 使用同一帧数据读取完成时的时间戳（µs）发布，消费者读取 Topic 消息的时间戳。
 
-The Topics `gyro_topic_name` and `accl_topic_name` are published with the timestamp (µs) taken when the same frame has been read; consumers read the Topic envelope timestamp.
+The Topics `gyro_topic_name` and `accl_topic_name` are published with the timestamp (µs) taken when the same frame has been read; consumers read the Topic message timestamp.
 
 ## 3. 构造接口 / Constructor
 
@@ -54,36 +56,36 @@ LSM6DSV16X(LibXR::SPI& spi,
 
 依赖：
 
-- `spi`：连接传感器的 `LibXR::SPI`，使用模式 0（`CPOL=0`，`CPHA=0`），取自 BSP 的硬件注册（`XR_REGISTER`）。
+- `spi`：连接传感器的 `LibXR::SPI`，由 BSP 配置为模式 0（`CPOL=0`，`CPHA=0`），取自 BSP 的硬件注册（`XR_REGISTER`）。
 - `cs`：用作片选的 `LibXR::GPIO`，模块将其配置为推挽输出；多字节事务的帧由该 GPIO 界定。
 - `database`：保存陀螺仪零偏的 `LibXR::Database`。
-- `ramfs`：注册 `lsm6dsv16x` 命令文件的 `LibXR::RamFS`。
+- `ramfs`：接收 `lsm6dsv16x` 命令的 `LibXR::RamFS`。
 
 配置参数（`Param`）：
 
 - `gyro_datarate`、`accel_datarate`：陀螺仪与加速度计的输出数据率 `LSM6DSV16X::DataRate`，默认 `DATA_RATE_120HZ`。
 - `accl_range`：加速度计量程 `LSM6DSV16X::AcclRange`，默认 `RANGE_8G`。
 - `gyro_range`：陀螺仪量程 `LSM6DSV16X::GyroRange`，默认 `DPS_2000`。
-- `rotation`：机体系旋转四元数 `{w, x, y, z}`，默认 `{1, 0, 0, 0}`。
+- `rotation`：传感器坐标系到应用坐标系的四元数 `{w, x, y, z}`，默认单位四元数。
 - `poll_interval_ms`：轮询间隔，单位 ms，默认 2.0。
-- `task_stack_depth`：轮询线程栈深，默认 1024。
+- `task_stack_depth`：轮询线程栈深，单位字节，默认 1024。
 - `gyro_topic_name`、`accl_topic_name`：发布的 Topic 名称，默认 `"lsm6dsv16x_gyro"`、`"lsm6dsv16x_accl"`。
 
 Dependencies:
 
-- `spi`: the `LibXR::SPI` connected to the sensor, using mode 0 (`CPOL=0`, `CPHA=0`), taken from the BSP's Registration (`XR_REGISTER`).
+- `spi`: the `LibXR::SPI` connected to the sensor, configured by the BSP to mode 0 (`CPOL=0`, `CPHA=0`), taken from the BSP's Registration (`XR_REGISTER`).
 - `cs`: the `LibXR::GPIO` used as chip select, configured by the Module as a push-pull output; the frame of a multi-byte transaction is delimited by this GPIO.
 - `database`: the `LibXR::Database` that stores the gyroscope zero offset.
-- `ramfs`: the `LibXR::RamFS` that receives the `lsm6dsv16x` command file.
+- `ramfs`: the `LibXR::RamFS` that receives the `lsm6dsv16x` command.
 
 Configuration parameters (`Param`):
 
 - `gyro_datarate`, `accel_datarate`: output data rate `LSM6DSV16X::DataRate` of the gyroscope and the accelerometer, default `DATA_RATE_120HZ`.
 - `accl_range`: accelerometer range `LSM6DSV16X::AcclRange`, default `RANGE_8G`.
 - `gyro_range`: gyroscope range `LSM6DSV16X::GyroRange`, default `DPS_2000`.
-- `rotation`: body-frame rotation quaternion `{w, x, y, z}`, default `{1, 0, 0, 0}`.
+- `rotation`: quaternion `{w, x, y, z}` from the sensor frame to the application frame, default identity.
 - `poll_interval_ms`: polling interval in ms, default 2.0.
-- `task_stack_depth`: stack depth of the polling thread, default 1024.
+- `task_stack_depth`: stack depth of the polling thread in bytes, default 1024.
 - `gyro_topic_name`, `accl_topic_name`: names of the published Topics, default `"lsm6dsv16x_gyro"` and `"lsm6dsv16x_accl"`.
 
 ## 4. Topic
