@@ -15,6 +15,7 @@ depends: []
 #include <cstring>
 #include <memory>
 
+#include "Eigen/Core"
 #include "database.hpp"
 #include "gpio.hpp"
 #include "message.hpp"
@@ -22,11 +23,7 @@ depends: []
 #include "semaphore.hpp"
 #include "spi.hpp"
 #include "thread.hpp"
-
-#ifndef LIBXR_NO_EIGEN
-#include "Eigen/Core"
 #include "transform.hpp"
-#endif
 
 /**
  * @brief ST LSM6DSV16X 6 轴 IMU 驱动模块。
@@ -42,74 +39,6 @@ depends: []
 class LSM6DSV16X
 {
  public:
-#ifdef LIBXR_NO_EIGEN
-  /**
-   * @brief LibXR 关闭 Eigen 时使用的轻量三维向量。
-   *        Minimal 3D vector used when LibXR is built without Eigen.
-   */
-  struct Vector3f
-  {
-    float data[3] {};
-
-    Vector3f() = default;
-    Vector3f(float x, float y, float z) : data{x, y, z} {}
-
-    float& x() { return data[0]; }
-    float& y() { return data[1]; }
-    float& z() { return data[2]; }
-    const float& x() const { return data[0]; }
-    const float& y() const { return data[1]; }
-    const float& z() const { return data[2]; }
-
-    void setZero()
-    {
-      data[0] = 0.0f;
-      data[1] = 0.0f;
-      data[2] = 0.0f;
-    }
-  };
-
-  /**
-   * @brief 无 Eigen 时用于向量旋转的轻量四元数。
-   *        Minimal quaternion for vector rotation when Eigen is unavailable.
-   */
-  struct Quaternionf
-  {
-    float w = 1.0f;
-    float x = 0.0f;
-    float y = 0.0f;
-    float z = 0.0f;
-
-    Quaternionf() = default;
-    Quaternionf(float w_in, float x_in, float y_in, float z_in)
-        : w(w_in), x(x_in), y(y_in), z(z_in)
-    {
-    }
-
-    Vector3f operator*(const Vector3f& v) const
-    {
-      const float tx = 2.0f * (y * v.z() - z * v.y());
-      const float ty = 2.0f * (z * v.x() - x * v.z());
-      const float tz = 2.0f * (x * v.y() - y * v.x());
-
-      return Vector3f(v.x() + w * tx + (y * tz - z * ty),
-                      v.y() + w * ty + (z * tx - x * tz),
-                      v.z() + w * tz + (x * ty - y * tx));
-    }
-  };
-
-  /// 模块使用的姿态旋转四元数类型
-  /// Rotation quaternion type used by the Module
-  using Rotation = Quaternionf;
-
-  /// 存入 Database 的陀螺仪零偏向量，单位 rad/s
-  /// Gyroscope zero-offset vector stored in the Database, in rad/s
-  using BiasVector = Vector3f;
-
-  /// 校准时累加陀螺仪原始值的类型
-  /// Type that accumulates the raw gyroscope values during calibration
-  using CaliVector = std::array<int64_t, 3>;
-#else
   /// 传感器采样使用的三维向量类型
   /// 3D vector type used for sensor samples
   using Vector3f = Eigen::Matrix<float, 3, 1>;
@@ -125,7 +54,6 @@ class LSM6DSV16X
   /// 校准时累加陀螺仪原始值的类型
   /// Type that accumulates the raw gyroscope values during calibration
   using CaliVector = Eigen::Matrix<int64_t, 3, 1>;
-#endif
 
   /// @name 寄存器地址 Register addresses
   /// @{
