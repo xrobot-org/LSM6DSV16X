@@ -129,10 +129,10 @@ modules:
 
 ## 6. 依赖与硬件 / Dependencies and Hardware
 
-依赖：LibXR。未定义 `LIBXR_NO_EIGEN` 时使用 Eigen 向量和四元数；定义时使用头文件内置的轻量类型。
+依赖：LibXR。
 
 硬件：一片通过 SPI 连接的 LSM6DSV16X，带一个片选 GPIO；SPI、GPIO、Database 与 RamFS 由 BSP 通过 `XR_REGISTER` 注册。
 
-Dependencies: LibXR. Eigen vectors and quaternions are used when `LIBXR_NO_EIGEN` is not defined; when it is defined, the header uses its own lightweight types.
+Dependencies: LibXR.
 
 Hardware: one LSM6DSV16X connected over SPI with a chip-select GPIO; the SPI, GPIO, Database and RamFS are registered by the BSP with `XR_REGISTER`.
